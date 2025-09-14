@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  research-platform:
+    build: .
+    container_name: research-platform-app
+    ports:
+      - "${HOST_PORT:-5000}:5000"
+    environment:
+      # Flask configuration
+      - FLASK_ENV=${FLASK_ENV:-production}
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
+      
+      # Claude API configuration
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-sonnet-20240229}
+      - CLAUDE_MAX_TOKENS=${CLAUDE_MAX_TOKENS:-4000}
+      
+      # PubMed API configuration
+      - PUBMED_API_KEY=${PUBMED_API_KEY}
+      - PUBMED_EMAIL=${PUBMED_EMAIL:-user@example.com}
+      - PUBMED_TOOL=${PUBMED_TOOL:-ResearchPlatform}
+      
+      # Asana API configuration
+      - ASANA_ACCESS_TOKEN=${ASANA_ACCESS_TOKEN}
+      - ASANA_WORKSPACE_GID=${ASANA_WORKSPACE_GID}
+      
+      # Redis configuration for rate limiting
+      - REDIS_URL=redis://redis:6379/0
+      - RATELIMIT_STORAGE_URL=redis://redis:6379/1
+    
+    volumes:
+      - research_logs:/app/logs
+      - research_server_files:/app/server_files
+      - research_templates:/app/templates
+      - research_static:/app/static
+      - research_uploads:/app/uploads
+      
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - research-network
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: research-platform-redis
+    volumes:
+      - research_redis_data:/data
+    networks:
+      - research-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+volumes:
+  research_logs:
+    driver_opts:
+      type: nfs
+      device: ":/Docker/research-platform/logs"
+      o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
+  
+  research_server_files:
+    driver_opts:
+      type: nfs
+      device: ":/Docker/research-platform/server_files"
+      o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
+  
+  research_templates:
+    driver_opts:
+      type: nfs
+      device: ":/Docker/research-platform/templates"
+      o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
+  
+  research_static:
+    driver_opts:
+      type: nfs
+      device: ":/Docker/research-platform/static"
+      o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
+  
+  research_uploads:
+    driver_opts:
+      type: nfs
+      device: ":/Docker/research-platform/uploads"
+      o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
+  
+  research_redis_data:
+    driver_opts:
+      type: nfs
+      device: ":/Docker/research-platform/redis"
+      o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
+
+networks:
+  research-network:
+    driver: bridge
