@@ -215,6 +215,9 @@ def list_page_files(page_name):
     return jsonify({'files': files})
 
 # API-specific request handlers
+# API-specific request handlers
+# Replace the existing handler functions in app.py with these updated versions
+
 def handle_claude_request(page_name, form_data, uploaded_files_data, server_files_data, session_id):
     """Handle Claude API requests"""
     if not claude_client.is_connected():
@@ -222,7 +225,16 @@ def handle_claude_request(page_name, form_data, uploaded_files_data, server_file
     
     operation = form_data.get('operation', 'generate')
     
-    if operation == 'generate':
+    # Test connection operation
+    if operation == 'test':
+        return jsonify({
+            'success': True,
+            'model': claude_client.model,
+            'max_tokens': claude_client.max_tokens,
+            'session_id': session_id
+        })
+    
+    elif operation == 'generate':
         prompt = form_data.get('prompt', '')
         if not prompt:
             return jsonify({'error': 'Prompt required'}), 400
@@ -230,16 +242,67 @@ def handle_claude_request(page_name, form_data, uploaded_files_data, server_file
         # Build context from files
         context = build_context(uploaded_files_data, server_files_data)
         
-        # Call Claude
-        response = claude_client.generate(prompt, context)
+        # Get optional parameters
+        temperature = float(form_data.get('temperature', 0.7))
+        system_prompt = form_data.get('system_prompt')
         
-        return jsonify({
-            'success': True,
-            'content': response,
-            'session_id': session_id
-        })
+        try:
+            # Call Claude
+            response = claude_client.generate(
+                prompt, 
+                context,
+                system_prompt=system_prompt,
+                temperature=temperature
+            )
+            
+            return jsonify({
+                'success': True,
+                'content': response,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Claude generation error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'analyze':
+        text = form_data.get('text', '')
+        analysis_type = form_data.get('analysis_type', 'summary')
+        
+        if not text:
+            return jsonify({'error': 'Text required for analysis'}), 400
+        
+        try:
+            result = claude_client.analyze(text, analysis_type)
+            return jsonify({
+                'success': True,
+                'analysis': result,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Claude analysis error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'compare':
+        text1 = form_data.get('text1', '')
+        text2 = form_data.get('text2', '')
+        comparison_type = form_data.get('comparison_type', 'both')
+        
+        if not text1 or not text2:
+            return jsonify({'error': 'Both text1 and text2 required'}), 400
+        
+        try:
+            result = claude_client.compare_texts(text1, text2, comparison_type)
+            return jsonify({
+                'success': True,
+                'comparison': result,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Claude comparison error: {e}")
+            return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': f'Unknown operation: {operation}'}), 400
+
 
 def handle_pubmed_request(page_name, form_data, uploaded_files_data, server_files_data, session_id):
     """Handle PubMed API requests"""
@@ -248,30 +311,118 @@ def handle_pubmed_request(page_name, form_data, uploaded_files_data, server_file
     
     operation = form_data.get('operation', 'search')
     
-    if operation == 'search':
-        query = form_data.get('query', '')
-        filters = json.loads(form_data.get('filters', '{}'))
-        
-        results = pubmed_client.search(query, filters)
-        
+    # Test connection operation
+    if operation == 'test':
         return jsonify({
             'success': True,
-            'results': results,
+            'has_api_key': bool(pubmed_client.api_key),
+            'rate_limit': f'{pubmed_client.rate_limit}/sec',
             'session_id': session_id
         })
+    
+    elif operation == 'search':
+        query = form_data.get('query', '')
+        if not query:
+            return jsonify({'error': 'Query required'}), 400
+        
+        filters = json.loads(form_data.get('filters', '{}'))
+        max_results = int(form_data.get('max_results', 100))
+        
+        try:
+            results = pubmed_client.search(query, filters, max_results)
+            
+            return jsonify({
+                'success': True,
+                'results': results,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"PubMed search error: {e}")
+            return jsonify({'error': str(e)}), 500
     
     elif operation == 'fetch':
         pmids = json.loads(form_data.get('pmids', '[]'))
+        if not pmids:
+            return jsonify({'error': 'PMIDs required'}), 400
         
-        articles = pubmed_client.fetch_articles(pmids)
+        include_abstract = form_data.get('include_abstract', 'true').lower() == 'true'
+        include_full_text = form_data.get('include_full_text', 'false').lower() == 'true'
         
-        return jsonify({
-            'success': True,
-            'articles': articles,
-            'session_id': session_id
-        })
+        try:
+            articles = pubmed_client.fetch_articles(pmids, include_abstract, include_full_text)
+            
+            return jsonify({
+                'success': True,
+                'articles': articles,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"PubMed fetch error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'advanced_search':
+        criteria = {}
+        
+        # Extract all possible search criteria
+        for field in ['keywords', 'title_words', 'abstract_words', 'authors', 
+                     'journals', 'mesh_terms', 'publication_types']:
+            if field in form_data:
+                criteria[field] = json.loads(form_data.get(field, '[]'))
+        
+        for field in ['date_from', 'date_to']:
+            if field in form_data:
+                criteria[field] = form_data.get(field)
+        
+        max_results = int(form_data.get('max_results', 100))
+        
+        try:
+            results = pubmed_client.advanced_search(**criteria, max_results=max_results)
+            
+            return jsonify({
+                'success': True,
+                'results': results,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"PubMed advanced search error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'get_citations':
+        pmid = form_data.get('pmid')
+        if not pmid:
+            return jsonify({'error': 'PMID required'}), 400
+        
+        try:
+            citations = pubmed_client.get_citations(pmid)
+            return jsonify({
+                'success': True,
+                'citations': citations,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"PubMed citations error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'get_related':
+        pmid = form_data.get('pmid')
+        if not pmid:
+            return jsonify({'error': 'PMID required'}), 400
+        
+        max_related = int(form_data.get('max_related', 10))
+        
+        try:
+            related = pubmed_client.get_related_articles(pmid, max_related)
+            return jsonify({
+                'success': True,
+                'related_pmids': related,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"PubMed related articles error: {e}")
+            return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': f'Unknown operation: {operation}'}), 400
+
 
 def handle_asana_request(page_name, form_data, uploaded_files_data, server_files_data, session_id):
     """Handle Asana API requests"""
@@ -280,24 +431,154 @@ def handle_asana_request(page_name, form_data, uploaded_files_data, server_files
     
     operation = form_data.get('operation', 'list_projects')
     
-    if operation == 'list_projects':
-        projects = asana_client.get_projects()
-        return jsonify({
-            'success': True,
-            'projects': projects,
-            'session_id': session_id
-        })
+    # Test connection operation
+    if operation == 'test':
+        try:
+            workspace_info = asana_client.get_workspace_info()
+            user_info = asana_client.get_me()
+            return jsonify({
+                'success': True,
+                'workspace': workspace_info,
+                'user': user_info,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana test error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'get_workspace':
+        try:
+            workspace_info = asana_client.get_workspace_info()
+            return jsonify({
+                'success': True,
+                'workspace': workspace_info,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana workspace error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'get_project':
+        project_gid = form_data.get('project_gid')
+        if not project_gid:
+            return jsonify({'error': 'project_gid required'}), 400
+        
+        try:
+            project = asana_client.get_project(project_gid)
+            
+            # Try to get metrics too
+            try:
+                metrics = asana_client.get_task_metrics_for_project(project_gid)
+            except:
+                metrics = None
+            
+            return jsonify({
+                'success': True,
+                'project': project,
+                'metrics': metrics,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana get project error: {e}")
+            return jsonify({'error': str(e)}), 500
     
     elif operation == 'get_tasks':
         project_gid = form_data.get('project_gid')
-        tasks = asana_client.get_project_tasks(project_gid)
-        return jsonify({
-            'success': True,
-            'tasks': tasks,
-            'session_id': session_id
-        })
+        if not project_gid:
+            return jsonify({'error': 'project_gid required'}), 400
+        
+        completed_since = form_data.get('completed_since')
+        limit = int(form_data.get('limit', 100))
+        
+        try:
+            tasks = asana_client.get_project_tasks(project_gid, completed_since, limit)
+            return jsonify({
+                'success': True,
+                'tasks': tasks,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana get tasks error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'get_task':
+        task_gid = form_data.get('task_gid')
+        if not task_gid:
+            return jsonify({'error': 'task_gid required'}), 400
+        
+        try:
+            task = asana_client.get_task(task_gid)
+            return jsonify({
+                'success': True,
+                'task': task,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana get task error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'search_tasks':
+        project_gid = form_data.get('project_gid')
+        query = form_data.get('query', '')
+        
+        if not project_gid or not query:
+            return jsonify({'error': 'project_gid and query required'}), 400
+        
+        try:
+            tasks = asana_client.search_tasks_in_project(project_gid, query)
+            return jsonify({
+                'success': True,
+                'tasks': tasks,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana search tasks error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'get_metrics':
+        project_gid = form_data.get('project_gid')
+        if not project_gid:
+            return jsonify({'error': 'project_gid required'}), 400
+        
+        start_date = form_data.get('start_date')
+        end_date = form_data.get('end_date')
+        
+        try:
+            metrics = asana_client.get_task_metrics_for_project(
+                project_gid, 
+                start_date, 
+                end_date
+            )
+            return jsonify({
+                'success': True,
+                'metrics': metrics,
+                'session_id': session_id
+            })
+        except Exception as e:
+            logger.error(f"Asana get metrics error: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    elif operation == 'find_project':
+        project_name = form_data.get('project_name')
+        if not project_name:
+            return jsonify({'error': 'project_name required'}), 400
+        
+        try:
+            project = asana_client.find_project_by_name(project_name)
+            if project:
+                return jsonify({
+                    'success': True,
+                    'project': project,
+                    'session_id': session_id
+                })
+            else:
+                return jsonify({'error': 'Project not found'}), 404
+        except Exception as e:
+            logger.error(f"Asana find project error: {e}")
+            return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': f'Unknown operation: {operation}'}), 400
+
 
 def handle_combined_request(page_name, form_data, uploaded_files_data, server_files_data, session_id):
     """Handle requests that use multiple APIs"""
@@ -306,15 +587,37 @@ def handle_combined_request(page_name, form_data, uploaded_files_data, server_fi
     
     for op in operations:
         api = op.get('api')
-        if api == 'claude' and claude_client.is_connected():
-            # Process with Claude
-            pass
-        elif api == 'pubmed' and pubmed_client.is_connected():
-            # Process with PubMed
-            pass
-        elif api == 'asana' and asana_client.is_connected():
-            # Process with Asana
-            pass
+        op_data = op.get('data', {})
+        
+        try:
+            if api == 'claude' and claude_client.is_connected():
+                # Process with Claude
+                if op.get('operation') == 'generate':
+                    response = claude_client.generate(
+                        op_data.get('prompt', ''),
+                        op_data.get('context')
+                    )
+                    results[f"{api}_{op.get('operation')}"] = response
+                    
+            elif api == 'pubmed' and pubmed_client.is_connected():
+                # Process with PubMed
+                if op.get('operation') == 'search':
+                    response = pubmed_client.search(
+                        op_data.get('query', ''),
+                        op_data.get('filters', {}),
+                        op_data.get('max_results', 100)
+                    )
+                    results[f"{api}_{op.get('operation')}"] = response
+                    
+            elif api == 'asana' and asana_client.is_connected():
+                # Process with Asana
+                if op.get('operation') == 'get_project':
+                    response = asana_client.get_project(op_data.get('project_gid'))
+                    results[f"{api}_{op.get('operation')}"] = response
+                    
+        except Exception as e:
+            logger.error(f"Combined operation error for {api}: {e}")
+            results[f"{api}_{op.get('operation')}_error"] = str(e)
     
     return jsonify({
         'success': True,
@@ -322,8 +625,29 @@ def handle_combined_request(page_name, form_data, uploaded_files_data, server_fi
         'session_id': session_id
     })
 
+
 def handle_generic_request(page_name, form_data, uploaded_files_data, server_files_data, session_id):
     """Default handler for pages without specific API requirements"""
+    # Check if this is actually an API-specific request that wasn't routed properly
+    operation = form_data.get('operation')
+    
+    # If it has an operation but no api_type, try to route based on the operation
+    if operation:
+        # Common operations that can help identify the API
+        if operation in ['generate', 'analyze', 'compare']:
+            form_data['api_type'] = 'claude'
+            return handle_claude_request(page_name, form_data, uploaded_files_data, 
+                                        server_files_data, session_id)
+        elif operation in ['search', 'fetch', 'advanced_search', 'get_citations']:
+            form_data['api_type'] = 'pubmed'
+            return handle_pubmed_request(page_name, form_data, uploaded_files_data, 
+                                        server_files_data, session_id)
+        elif operation in ['get_project', 'get_tasks', 'get_task', 'get_workspace']:
+            form_data['api_type'] = 'asana'
+            return handle_asana_request(page_name, form_data, uploaded_files_data, 
+                                       server_files_data, session_id)
+    
+    # Default response for truly generic requests
     return jsonify({
         'success': True,
         'message': 'Request processed',
