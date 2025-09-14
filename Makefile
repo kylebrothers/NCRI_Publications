@@ -7,6 +7,7 @@ DOCKER = docker
 PYTHON = python3
 PIP = pip3
 APP_NAME = research-platform
+SERVICE_NAME = research-platform
 CONTAINER_NAME = research-platform-app
 REDIS_CONTAINER = research-platform-redis
 IMAGE_NAME = research-platform:latest
@@ -119,7 +120,7 @@ start: ## Start existing containers
 ## Monitoring Commands
 logs: ## View application logs (follow mode)
 	@echo "$(GREEN)Showing logs (Ctrl+C to exit)...$(NC)"
-	$(DOCKER_COMPOSE) logs -f $(CONTAINER_NAME)
+	$(DOCKER_COMPOSE) logs -f $(SERVICE_NAME)
 
 logs-all: ## View all service logs
 	@echo "$(GREEN)Showing all logs (Ctrl+C to exit)...$(NC)"
@@ -264,7 +265,7 @@ rebuild: down build up ## Rebuild and restart everything
 
 refresh: ## Refresh application (restart without rebuild)
 	@echo "$(YELLOW)Refreshing application...$(NC)"
-	$(DOCKER_COMPOSE) restart $(CONTAINER_NAME)
+	$(DOCKER_COMPOSE) restart $(SERVICE_NAME)
 	@echo "$(GREEN)✓ Application refreshed!$(NC)"
 
 tail-logs: ## Tail application logs
