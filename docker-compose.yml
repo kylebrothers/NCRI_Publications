@@ -58,37 +58,37 @@ volumes:
   research_logs:
     driver_opts:
       type: nfs
-      device: ":/Docker/research-platform/logs"
+      device: ":/Docker/NCRI_Publications/logs"
       o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
   
   research_server_files:
     driver_opts:
       type: nfs
-      device: ":/Docker/research-platform/server_files"
+      device: ":/Docker/NCRI_Publications/server_files"
       o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
   
   research_templates:
     driver_opts:
       type: nfs
-      device: ":/Docker/research-platform/templates"
+      device: ":/Docker/NCRI_Publications/templates"
       o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
   
   research_static:
     driver_opts:
       type: nfs
-      device: ":/Docker/research-platform/static"
+      device: ":/Docker/NCRI_Publications/static"
       o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
   
   research_uploads:
     driver_opts:
       type: nfs
-      device: ":/Docker/research-platform/uploads"
+      device: ":/Docker/NCRI_Publications/uploads"
       o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
   
   research_redis_data:
     driver_opts:
       type: nfs
-      device: ":/Docker/research-platform/redis"
+      device: ":/Docker/NCRI_Publications/redis"
       o: nfsvers=4,addr=${NAS_IP:-192.168.0.134},nolock,soft,rw
 
 networks:
