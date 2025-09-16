@@ -258,17 +258,32 @@ class PubMedClient:
                             abstract_texts.append(text)
                     article['abstract'] = '\n'.join(abstract_texts)
                 
-                # Authors
+                # Authors with affiliations
                 authors = []
+                author_affiliations = []
+                
                 for author in article_meta.findall('.//Author'):
+                    author_data = {}
+                    
+                    # Get name
                     last_name = author.find('LastName')
                     first_name = author.find('ForeName')
                     if last_name is not None:
                         name = last_name.text
                         if first_name is not None:
                             name = f"{name}, {first_name.text}"
-                        authors.append(name)
+                        author_data['name'] = name
+                        
+                        # Get affiliation for this author
+                        affiliation_elem = author.find('.//Affiliation')
+                        if affiliation_elem is not None and affiliation_elem.text:
+                            author_data['affiliation'] = affiliation_elem.text
+                            author_affiliations.append(affiliation_elem.text)
+                        
+                        authors.append(author_data)
+                
                 article['authors'] = authors
+                article['affiliations'] = list(set(author_affiliations))  # Unique affiliations list
                 
                 # Journal info
                 journal = article_meta.find('.//Journal')
@@ -508,7 +523,13 @@ class PubMedClient:
             
             # Author filter
             if include and 'authors' in criteria:
-                article_authors = [a.lower() for a in article.get('authors', [])]
+                article_authors = []
+                for author in article.get('authors', []):
+                    if isinstance(author, dict):
+                        article_authors.append(author.get('name', '').lower())
+                    else:
+                        article_authors.append(str(author).lower())
+                
                 if not any(auth.lower() in ' '.join(article_authors) 
                           for auth in criteria['authors']):
                     include = False
@@ -544,8 +565,20 @@ class PubMedClient:
                 except:
                     pass
             
-            # Citation count filter (would need separate API calls)
-            # Impact factor filter (would need journal database)
+            # Affiliation filter
+            if include and 'affiliations' in criteria:
+                article_affiliations = []
+                for author in article.get('authors', []):
+                    if isinstance(author, dict) and 'affiliation' in author:
+                        article_affiliations.append(author['affiliation'].lower())
+                
+                # Also check the affiliations list
+                for aff in article.get('affiliations', []):
+                    article_affiliations.append(aff.lower())
+                
+                if not any(aff_pattern.lower() in ' '.join(article_affiliations) 
+                          for aff_pattern in criteria['affiliations']):
+                    include = False
             
             if include:
                 filtered.append(article)
@@ -574,7 +607,7 @@ class PubMedClient:
                     if articles:
                         # Use first article to get field names
                         fieldnames = ['pmid', 'title', 'authors', 'journal', 
-                                    'publication_date', 'abstract', 'doi']
+                                    'publication_date', 'abstract', 'doi', 'affiliations']
                         writer = csv.DictWriter(f, fieldnames=fieldnames)
                         writer.writeheader()
                         
@@ -582,7 +615,16 @@ class PubMedClient:
                             row = {k: article.get(k, '') for k in fieldnames}
                             # Convert lists to strings
                             if isinstance(row['authors'], list):
-                                row['authors'] = '; '.join(row['authors'])
+                                # Handle author objects
+                                author_names = []
+                                for author in row['authors']:
+                                    if isinstance(author, dict):
+                                        author_names.append(author.get('name', ''))
+                                    else:
+                                        author_names.append(str(author))
+                                row['authors'] = '; '.join(author_names)
+                            if isinstance(row['affiliations'], list):
+                                row['affiliations'] = '; '.join(row['affiliations'])
                             writer.writerow(row)
             
             elif format == 'bibtex':
@@ -617,7 +659,14 @@ class PubMedClient:
             bibtex += f"  title = {{{article['title']}}},\n"
         
         if article.get('authors'):
-            authors_str = ' and '.join(article['authors'])
+            # Handle author objects
+            author_names = []
+            for author in article['authors']:
+                if isinstance(author, dict):
+                    author_names.append(author.get('name', ''))
+                else:
+                    author_names.append(str(author))
+            authors_str = ' and '.join(author_names)
             bibtex += f"  author = {{{authors_str}}},\n"
         
         if article.get('journal'):
